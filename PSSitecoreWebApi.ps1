@@ -83,6 +83,9 @@
     .PARAMETER ExtractBlob
     [Optional] Set to retrieve BLOB field values
 
+    .PARAMETER Ssl
+    [Optional] Set to make requests over HTTPS.  Will override the protocol given in "Domain".
+
 
 #>
 function Invoke-SitecoreRequest{
@@ -113,11 +116,52 @@ function Invoke-SitecoreRequest{
         [int]$page,
         [ValidateScript({$_ -ge 0 })]
         [int]$pageSize,
-        [psobject]$addParams,        
+        [psobject]$addParams = @{},        
         [string]$apiVersion = "1",
         [switch]$fastQuery,
-        [switch]$extractBlob
+        [switch]$extractBlob,
+        [switch]$ssl
     )
-    $url = "http://$domain/-/item/v$apiVersion/$path"    
-    $url
+
+    # Parse protocol and domain
+    if($domain -match "(?<protocol>https?://)?(?<domain>[^/]*)(.*)"){
+        $protocol = $Matches.protocol
+        if(-not($Matches.protocol)){
+            $protocol = if($ssl) { "https://" } else { "http://" }
+        }
+        $domain = $Matches.domain
+    }    
+
+    # Construct URL
+    $url = "$protocol$domain/-/item/v$apiVersion/$path"  
+    
+    # Construct query string parameters
+    # There has to be a better way to do this!
+
+    # Use the given $addParams as the base
+    # is initilised to empty hashtable to in declaration
+    if($item){ $addParams.sc_itemid = $item }
+    if($version){ $addParams.sc_itemversion = $version }
+    if($database){ $addParams.sc_database = $database }
+    if($language){ $addParams.language = $language }
+    if($fields){ $addParams.fields = $fields }
+    if($payload){ $addParams.payload = $payload }
+    if($scope) { $addParams.scope = $scope }
+    if($query){
+        if(($query -notlike "fast:/*") -and $fastQuery){
+            $query = "fast:/$query"
+        }
+        $addParams.query = $query
+    }
+    if($page){ $addParams.page = $page }
+    if($pageSize){ $addParams.pagesize = $pageSize }
+    if($extractBlob){ $addParams.extractblob = 1 }
+    
+    # TODO: Parse the query string parameters
+
+    Write-Verbose "Request URL: $url"
+
+    Invoke-WebRequest $url
 }
+
+Invoke-SitecoreRequest sc66 -Verbose
