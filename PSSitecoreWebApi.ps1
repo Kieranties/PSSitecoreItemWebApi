@@ -116,7 +116,7 @@ function Invoke-SitecoreRequest{
         [int]$page,
         [ValidateScript({$_ -ge 0 })]
         [int]$pageSize,
-        [psobject]$addParams = @{},        
+        [hashtable]$addParams = @{},        
         [string]$apiVersion = "1",
         [switch]$fastQuery,
         [switch]$extractBlob,
@@ -157,11 +157,26 @@ function Invoke-SitecoreRequest{
     if($pageSize){ $addParams.pagesize = $pageSize }
     if($extractBlob){ $addParams.extractblob = 1 }
     
-    # TODO: Parse the query string parameters
+    # Parse the query string parameters
+    $addParams.Keys | % {
+        Write-Verbose "Query param: $_ = $($addParams[$_])"
+        $encodedVal = [Web.HttpUtility]::UrlEncode($addParams[$_])
+        $qs += "$_=$encodedVal&" 
+    }
+    if($qs){ $qs = $qs -replace "(.*)&$",'?$1' }
 
+    $headers = @{}
+    if($PSCmdlet.ParameterSetName.Equals("auth")){
+         $headers = @{
+            "X-Scitemwebapi-Username" = $username
+            "X-Scitemwebapi-Password" = $password
+        }
+    }
+
+    
     Write-Verbose "Request URL: $url"
+    Write-Verbose "Request headers:"
+    $headers.Keys | % { Write-Verbose "$_ = $($headers[$_])" }
 
-    Invoke-WebRequest $url
+    Invoke-WebRequest $url$qs -Headers $headers | ConvertFrom-Json
 }
-
-Invoke-SitecoreRequest sc66 -Verbose
