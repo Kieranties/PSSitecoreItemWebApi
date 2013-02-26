@@ -17,13 +17,15 @@ To get up and running using the module run the following (in Powershell of cours
  
 
 Once installed run
+    
     Import-Module PSSitecoreItemWebAPI # to make the module functions available
     Get-Help Invoke-SitecoreRequest # to find out what you can do
     
 Usage
 -----
 
-Only some basic GET stuff has been tested so far, but in principle other functions should work too:
+Only some basic GET stuff has been tested so far, but `Invoke-SitecoreRequest` has been made flexible enough to handle other HTTP status codes and _all_ parameters that can be provided.
+Have a play and see what you can do.
 
 ### Get an item by path
     Invoke-SitecoreRequest mydomain -path "/sitecore/content/home/myitem"
