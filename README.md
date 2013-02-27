@@ -3,6 +3,7 @@ PSSitecoreItemWebApi
 
 A PowerShell module to interact with the Sitecore Item Web API
 
+**Requires**: PowerShell 3.0
 
 Install (as a script)
 ---------------------
