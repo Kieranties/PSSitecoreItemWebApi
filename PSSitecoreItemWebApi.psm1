@@ -12,7 +12,7 @@ New-Variable validScopes -value  "s", "p", "c" `
     -Option Constant -Visibility Private
 
 <# --------------------------------------------------------------- #>
-<# Test functions                                                  #>
+<# Private Test functions                                          #>
 <# --------------------------------------------------------------- #>
            
 <#
@@ -86,6 +86,60 @@ Function Test-Scope{
     }
 
     $true
+}
+
+<# --------------------------------------------------------------- #>
+<# Private Helper functions                                        #>
+<# --------------------------------------------------------------- #>
+
+<#
+    .SYNOPSIS
+    Returns a Url encoded query string
+#>
+Function Format-UrlEncoded{
+    param(
+        [Parameter(ValueFromPipeline=$true, Position=0, Mandatory=$true)]
+        [ValidateScript({ $_.Count -gt 0})]
+        [hashtable]$hash = @{}
+    )
+    begin {
+        $outputValue = '?'
+    }
+    
+    process{
+        $hash.Keys | % { 
+            $outputValue += ($_, [Web.HttpUtility]::UrlEncode($hash.$_) -join '=') + '&'
+        }
+    }
+
+    end{
+        $outputValue -replace "(.*)&$",'$1'
+    }
+
+}
+
+<#
+    .SYNOPSIS
+    Invokes a web request with raw parameters
+#>
+Function Invoke-RawRequest{
+    param(
+        [Parameter(Mandatory=$true, Position=0)]
+        [string]$url,
+        [ValidateScript({ Test-HttpMethod $_})]
+        [string]$method = "get", 
+        [hashtable]$headers,
+        [hashtable]$queryParams
+    )
+
+    $qs = Format-UrlEncoded $queryParams
+
+    Write-Verbose "Request URL: $url"
+    Write-Verbose "Request query string: $qs"
+    Write-Verbose "Request headers:"
+    $headers.Keys | % { Write-Verbose "$_ = $($headers.$_)" }
+
+    Invoke-WebRequest $url$qs -Method $method -Headers $headers | ConvertFrom-Json
 }
 
 <# --------------------------------------------------------------- #>
@@ -251,13 +305,6 @@ function Invoke-SitecoreRequest{
     if($pageSize){ $addParams.pagesize = $pageSize }
     if($extractBlob){ $addParams.extractblob = 1 }
     
-    # Parse the query string parameters
-    $addParams.Keys | % {
-        Write-Verbose "Query param: $_ = $($addParams[$_])"
-        $encodedVal = [Web.HttpUtility]::UrlEncode($addParams[$_])
-        $qs += "$_=$encodedVal&" 
-    }
-    if($qs){ $qs = $qs -replace "(.*)&$",'?$1' }
 
     $headers = @{}
     if($PSCmdlet.ParameterSetName.Equals("auth")){
@@ -266,13 +313,8 @@ function Invoke-SitecoreRequest{
             "X-Scitemwebapi-Password" = $password
         }
     }
-
     
-    Write-Verbose "Request URL: $url"
-    Write-Verbose "Request headers:"
-    $headers.Keys | % { Write-Verbose "$_ = $($headers[$_])" }
-
-    Invoke-WebRequest $url$qs -Method $method -Headers $headers | ConvertFrom-Json
+    Invoke-RawRequest $url $method $headers $query
 }
 
 # Only export the relevant functions
