@@ -1,4 +1,4 @@
-﻿<#
+<#
     .SYNOPSIS
     Executes a web API request against a Sitecore site
 
@@ -144,9 +144,9 @@ function Invoke-SitecoreRequest{
     if($version){ $addParams.sc_itemversion = $version }
     if($database){ $addParams.sc_database = $database }
     if($language){ $addParams.language = $language }
-    if($fields){ $addParams.fields = $fields }
+    if($fields){ $addParams.fields = $fields -join '|' }
     if($payload){ $addParams.payload = $payload }
-    if($scope) { $addParams.scope = $scope }
+    if($scope) { $addParams.scope = $scope -join '|' }
     if($query){
         if(($query -notlike "fast:/*") -and $fastQuery){
             $query = "fast:/$query"
@@ -178,5 +178,5 @@ function Invoke-SitecoreRequest{
     Write-Verbose "Request headers:"
     $headers.Keys | % { Write-Verbose "$_ = $($headers[$_])" }
 
-    Invoke-WebRequest $url$qs -Headers $headers | ConvertFrom-Json
+    Invoke-WebRequest $url$qs -Method $method -Headers $headers | ConvertFrom-Json
 }
