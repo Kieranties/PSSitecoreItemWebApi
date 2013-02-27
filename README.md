@@ -48,7 +48,9 @@ The response is just the web response converted from JSON.  Some slight refactor
 
 Links
 -------
-[@Kieranties]
++ [@Kieranties]
++ [License] - MIT, go crazy.
 
 [@Kieranties]: http://twitter.com/kieranties
+[License]: http://kieranties.mit-license.org/
 
