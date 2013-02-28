@@ -17,7 +17,7 @@ New-Variable validScopes -value  "s", "p", "c" `
            
 <#
     .SYNOPSIS
-    Validate the given value is a guid
+    Test the given value is a guid
 #>
 Function Test-Guid {
     param($value)
@@ -166,10 +166,60 @@ Function Format-ApiResponse{
     }
         
     # Return the new object
-    New-Object -TypeName PSObject -Property $propertyMap
-    
+    New-Object -TypeName PSObject -Property $propertyMap    
 }
 
+<#
+    .SYNOPSIS
+    Formats the given parameters into an api url
+#>
+Function Format-RequestUrl{
+    param(
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="default")]
+        [string]$domain,
+        [string]$path,
+        [ValidateScript({ Test-GreaterThanZero $_ })]
+        [int]$apiVersion = 1,
+        [bool]$ssl
+    )
+    
+    # Parse protocol and domain
+    if($domain -match "(?<protocol>https?://)?(?<domain>[^/]*)(.*)"){
+        
+        $protocol = $Matches.protocol
+
+        # If protocol provided in $domain than igonore $ssl
+        if(-not($Matches.protocol)){
+            $protocol = if($ssl) { "https://" } else { "http://" }
+        }
+
+        $domain = $Matches.domain
+    }    
+
+    # Construct URL
+    "$protocol$domain/-/item/v$apiVersion/$path"  
+}
+
+<#
+    .SYNOPSIS
+    Returns a header collection for requests
+#>
+Function Get-RequestHeaders{
+    param(
+        [Parameter(Position=0)]
+        [string]$username,        
+        [Parameter(Position=1)]
+        [string]$password,
+        [Parameter(Position=2)]
+        [string]$contentType
+    )
+
+    $headers = @{}
+    if($username){ $headers.Add("X-Scitemwebapi-Username", $username) }
+    if($password){ $headers.Add("X-Scitemwebapi-Password", $password) }
+    if($contentType){ $headers.Add("Content-Type", $username) }
+    $headers
+}
 <# --------------------------------------------------------------- #>
 <# Exported functions                                              #>
 <# --------------------------------------------------------------- #>
@@ -299,23 +349,17 @@ function Invoke-SitecoreRequest{
         [switch]$ssl
     )
 
-    # Parse protocol and domain
-    if($domain -match "(?<protocol>https?://)?(?<domain>[^/]*)(.*)"){
-        $protocol = $Matches.protocol
-        if(-not($Matches.protocol)){
-            $protocol = if($ssl) { "https://" } else { "http://" }
-        }
-        $domain = $Matches.domain
-    }    
-
     # Construct URL
-    $url = "$protocol$domain/-/item/v$apiVersion/$path"  
+    $url = Format-RequestUrl $domain -path $path -apiVersion $apiVersion -ssl $ssl  
     
+    # Get headers
+    $headers = Get-RequestHeaders $username $password
+
     # Construct query string parameters
     # There has to be a better way to do this!
 
     # Use the given $addParams as the base
-    # is initilised to empty hashtable to in declaration
+    # is initialised to empty hashtable in declaration
     if($item){ $addParams.sc_itemid = $item }
     if($version){ $addParams.sc_itemversion = $version }
     if($database){ $addParams.sc_database = $database }
@@ -332,15 +376,6 @@ function Invoke-SitecoreRequest{
     if($page){ $addParams.page = $page }
     if($pageSize){ $addParams.pagesize = $pageSize }
     if($extractBlob){ $addParams.extractblob = 1 }
-    
-
-    $headers = @{}
-    if($PSCmdlet.ParameterSetName.Equals("auth")){
-         $headers = @{
-            "X-Scitemwebapi-Username" = $username
-            "X-Scitemwebapi-Password" = $password
-        }
-    }
     
     Invoke-RawRequest $url -method $method -headers $headers -queryParams $addParams
 }
