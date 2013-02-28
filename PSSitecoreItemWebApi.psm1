@@ -130,7 +130,8 @@ Function Invoke-RawRequest{
         [ValidateScript({ Test-HttpMethod $_})]
         [string]$method = "get", 
         [hashtable]$headers,
-        [hashtable]$queryParams
+        [hashtable]$queryParams,
+        [string]$body
     )
 
     $qs = Format-UrlEncoded $queryParams
@@ -141,7 +142,12 @@ Function Invoke-RawRequest{
     Write-Verbose "Request headers:"
     $headers.Keys | % { Write-Verbose "$_ = $($headers.$_)" }
 
-    Invoke-WebRequest $url$qs -Method $method -Headers $headers | Format-ApiResponse
+    $result = if($body){
+                Invoke-WebRequest $url$qs -Method $method -Headers $headers -Body $body
+              } else {
+                Invoke-WebRequest $url$qs -Method $method -Headers $headers
+              }
+    $result | Format-ApiResponse
 }
 
 <#
@@ -317,44 +323,36 @@ Function Get-RequestHeaders{
 #>
 function Invoke-SitecoreRequest{
     param(        
-        [Parameter(Mandatory=$true, Position=0, ParameterSetName="default")]
-        [Parameter(Mandatory=$true, Position=0, ParameterSetName="auth")]
+        [Parameter(Mandatory=$true, Position=0)]
         [string]$domain,
-        [Parameter(Mandatory=$true,  Position=1, ParameterSetName="auth")]
         [string]$username,        
-        [Parameter(Mandatory=$true,  Position=2, ParameterSetName="auth")]
         [string]$password,
-        [ValidateScript({ Test-HttpMethod $_})]
         [string]$method = "get",                
         [string]$path,
-        [ValidateScript({ Test-Guid $_ })]
         [string]$item,
-        [ValidateScript({ Test-GreaterThanZero $_ })]
         [int]$version,
         [string]$database,
         [string]$language,
         [string[]]$responseFields,
-        [ValidateScript({ Test-Payload $_ })]
         [string]$payload,
-        [ValidateScript({ Test-Scope $_ })]
         [string[]]$scope,
         [string]$query,
-        [ValidateScript({ Test-GreaterThanZero $_ })]
         [int]$page,
-        [ValidateScript({ Test-GreaterThanZero $_ })]
         [int]$pageSize,
         [hashtable]$addParams = @{},        
         [string]$apiVersion = "1",
-        [switch]$fastQuery,
-        [switch]$extractBlob,
-        [switch]$ssl
+        [bool]$fastQuery,
+        [bool]$extractBlob,
+        [bool]$ssl,
+        [string]$contentType,
+        [string]$body
     )
 
     # Construct URL
     $url = Format-RequestUrl $domain -path $path -apiVersion $apiVersion -ssl $ssl  
     
     # Get headers
-    $headers = Get-RequestHeaders $username $password
+    $headers = Get-RequestHeaders $username $password $contentType
 
     # Construct query string parameters
     # There has to be a better way to do this!
@@ -378,7 +376,7 @@ function Invoke-SitecoreRequest{
     if($pageSize){ $addParams.pagesize = $pageSize }
     if($extractBlob){ $addParams.extractblob = 1 }
     
-    Invoke-RawRequest $url -method $method -headers $headers -queryParams $addParams
+    Invoke-RawRequest $url -method $method -headers $headers -queryParams $addParams -body $body
 }
 
 <#
@@ -415,6 +413,20 @@ Function Add-SitecoreItem{
         [switch]$fastQuery,
         [switch]$ssl
     )
+
+    $contentType = "application/x-www-form-urlencoded"
+
+    $addParams = @{ 
+        name = $name
+        template = $template
+    }
+
+    $body = Format-UrlEncoded $itemFields
+
+    Invoke-SitecoreRequest $domain -method "POST" -username $username -password $password `
+        -path $path -database $database -item $item -query $query -scope $scope `
+        -responseFields $responseFields -payload $payload -apiVersion $apiVersion `
+        -fastQuery $fastQuery -ssl $ssl -addParams $addParams -body $body
 }
 
 # Only export the relevant functions
