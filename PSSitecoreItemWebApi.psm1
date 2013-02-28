@@ -17,14 +17,14 @@ New-Variable validScopes -value  "s", "p", "c" `
            
 <#
     .SYNOPSIS
-    Test the given value is a guid
+    Validate the given value is a guid
 #>
 Function Test-Guid {
     param($value)
     
     # Error thrown if invalid
     try{
-        [guid]::Parse($_)
+        [guid]::Parse($value)
     } catch [exception] {
         throw
     }
@@ -87,6 +87,7 @@ Function Test-Scope{
 
     $true
 }
+
 
 <# --------------------------------------------------------------- #>
 <# Private Helper functions                                        #>
@@ -166,17 +167,38 @@ Function Format-ApiResponse{
     $jsonObj = $data | ConvertFrom-Json
 
     # TODO: Tidy this up, what happens if more properties are added?
-    $propertyMap = @{"StatusCode" = $jsonObj.StatusCode}
-    if($jsonObj.statusCode -eq 200){
-        $propertyMap.Add("ResultCount", $jsonObj.Result.ResultCount)
-        $propertyMap.Add("TotalCount", $jsonObj.Result.TotalCount)
-        $propertyMap.Add("Items", $jsonObj.Result.Items)     
-    } else {
-        $propertyMap.Add("ErrorMessage", $jsonObj.Error.Message)
-    }
-        
-    # Return the new object
-    New-Object -TypeName PSObject -Property $propertyMap    
+    $propertyMap = if($jsonObj.Error) { $jsonObj.Error} # Use the error properties as the base
+        else{
+            $result = $jsonObj.Result # Use the result properties as a base...
+
+            # But on a DELETE the response object has a different structure....
+            # Lets normalise it with the normal 200 response sent by other
+            # operations
+            if($result.ItemIds){ # Only sent by DELETE operations
+
+                # Delete returns a Count proprty but this overrides the count function
+                # of the number of entries in the hash which is confusing!
+                $result | Add-Member NoteProperty -Name totalCount -Value $result.ItemIds.Count
+                $result | Add-Member NoteProperty -Name resultCount -Value $result.ItemIds.Count               
+
+                # Normal response object has result.items (hash) with ID properties
+                # not result.itemids (array)
+                $itemArr = @()
+                $result.ItemIds | % { $itemArr += ( New-Object PSObject -Property @{ "ID" = $_ })}
+
+                $result | Add-Member NoteProperty -Name items -Value $itemArr               
+
+                # Remove the old key/values
+                $result = $result | select * -ExcludeProperty count,itemIds
+            }
+
+            $result
+        }
+            
+    # Add the status code to the return obj
+    $propertyMap | Add-Member NoteProperty -Name StatusCode -Value $jsonObj.statusCode   
+
+    $propertyMap
 }
 
 <#
@@ -326,7 +348,7 @@ Function Get-RequestHeaders{
 
 
 #>
-function Invoke-SitecoreRequest{
+Function Invoke-SitecoreRequest{
     param(        
         [Parameter(Mandatory=$true, Position=0)]
         [string]$domain,
@@ -480,7 +502,7 @@ Function Set-SitecoreItem{
     Returns one or more Sitecore items
 #>
 Function Get-SitecoreItem{
- param(        
+    param(        
         [Parameter(Mandatory=$true, Position=0, ParameterSetName="default")]
         [Parameter(Mandatory=$true, Position=0, ParameterSetName="auth")]
         [string]$domain,
@@ -514,6 +536,36 @@ Function Get-SitecoreItem{
         -scope $scope -query $query -page $page -pageSize $pageSize `
         -apiVersion $apiVersion -fastQuery $fastQuery -extractBlob $extractBlob `
         -ssl $ssl
+}
+
+Function Remove-SitecoreItem{
+    param(        
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="default")]
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="auth")]
+        [string]$domain,
+        [Parameter(Mandatory=$true,  Position=1, ParameterSetName="auth")]
+        [string]$username,        
+        [Parameter(Mandatory=$true,  Position=2, ParameterSetName="auth")]
+        [string]$password,               
+        [string]$path,
+        [ValidateScript({ Test-Guid $_ })]
+        [string]$item,
+        [int]$version,        
+        [string]$database,
+        [string]$language,
+        [ValidateScript({ Test-Scope $_ })]
+        [string[]]$scope,
+        [string]$query,
+        [int]$page,
+        [int]$pageSize,      
+        [string]$apiVersion = "1",
+        [bool]$fastQuery,
+        [bool]$ssl
+    )
+
+    Invoke-SitecoreRequest $domain -method "DELETE" -username $username -password $password `
+        -path $path -item $item -version $version -database $database -language $language `
+        -scope $scope -query $query -apiVersion $apiVersion -fastQuery $fastQuery -ssl $ssl
 }
 
 # Only export the relevant functions
