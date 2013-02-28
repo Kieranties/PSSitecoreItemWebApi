@@ -46,6 +46,20 @@ Function Test-GreaterThanZero{
 
 <#
     .SYNOPSIS
+    Test the given value is greater than or equal to zero
+#>
+Function Test-GreaterOrEqualToZero{
+    param($value)
+
+    if($value -lt 1){
+        throw "Must be a value greater than or equal to 0"
+    }
+
+    $true
+}
+
+<#
+    .SYNOPSIS
     Test the given value is a valid http method
 #>
 Function Test-HttpMethod{
@@ -118,40 +132,6 @@ Function Format-UrlEncoded{
         }
     }
 
-}
-
-<#
-    .SYNOPSIS
-    Invokes a web request with raw parameters
-#>
-Function Invoke-RawRequest{
-    param(
-        [Parameter(Mandatory=$true, Position=0)]
-        [string]$url,
-        [ValidateScript({ Test-HttpMethod $_})]
-        [string]$method = "get", 
-        [hashtable]$headers,
-        [hashtable]$queryParams,
-        [string]$body,
-        [string]$contentType = ''
-    )
-
-    $qs = Format-UrlEncoded $queryParams
-    $qs = if($qs) { '?' + $qs}
-
-    Write-Verbose "Request URL: $url"
-    Write-Verbose "Request query string: $qs"
-    Write-Verbose "Request headers:"
-    $headers.Keys | % { Write-Verbose "$_ = $($headers.$_)" }
-
-    $result = if($body){
-                Invoke-WebRequest $url$qs -Method $method -Headers $headers `
-                    -ContentType $contentType -Body $body
-              } else {
-                Invoke-WebRequest $url$qs -Method $method -Headers $headers `
-                    -ContentType $contentType
-              }
-    $result | Format-ApiResponse
 }
 
 <#
@@ -254,17 +234,57 @@ Function Get-RequestHeaders{
  
     $headers
 }
+
+<#
+    .SYNOPSIS
+    Invokes a web request with raw parameters
+#>
+Function Invoke-RawRequest{
+    param(
+        [Parameter(Mandatory=$true, Position=0)]
+        [string]$url,
+        [ValidateScript({ Test-HttpMethod $_})]
+        [string]$method = "get", 
+        [hashtable]$headers,
+        [hashtable]$queryParams,
+        [string]$body,
+        [string]$contentType = ''
+    )
+
+    $qs = Format-UrlEncoded $queryParams
+    $qs = if($qs) { '?' + $qs}
+
+    Write-Verbose "Request URL: $url"
+    Write-Verbose "Request query string: $qs"
+    Write-Verbose "Request headers:"
+    $headers.Keys | % { Write-Verbose "$_ = $($headers.$_)" }
+
+    $result = if($body){
+                Invoke-WebRequest $url$qs -Method $method -Headers $headers `
+                    -ContentType $contentType -Body $body
+              } else {
+                Invoke-WebRequest $url$qs -Method $method -Headers $headers `
+                    -ContentType $contentType
+              }
+    $result | Format-ApiResponse
+}
+
 <# --------------------------------------------------------------- #>
 <# Exported functions                                              #>
 <# --------------------------------------------------------------- #>
 
 <#
     .SYNOPSIS
-    Executes a web API request against a Sitecore site
+    Executes a request using the Sitecore Item Web API
 
     .DESCRIPTION
-    Forms a valid URL based on the given parameters to execute against the given
-    domain and web API version.
+    This is the "free form" way to interact with the Sitecore Item Web API. Using 
+    this function will not perform validation on your parameters but will encode 
+    query string parameters and attempt to format pararmeters for the url (e.g the
+    scope array if provided will be sent as a pipe-delimited string).
+
+    Use this function if you want maximum control or to send parameters that are
+    not catered for by other functions.
 
     .PARAMETER Domain
     [Required] The domain of request to be made.  Can be provided with a protocol
@@ -300,7 +320,7 @@ Function Get-RequestHeaders{
     .PARAMETER Language
     [Optional] The language context for the requested items(s).
 
-    .PARAMETER Fields
+    .PARAMETER ResponseFields
     [Optional] String array of fields to return for the given request.  Items may be
     field names or guid identifiers.
 
@@ -346,7 +366,11 @@ Function Get-RequestHeaders{
     .PARAMETER Ssl
     [Optional] Set to make requests over HTTPS.  Will override the protocol given in "Domain".
 
+    .SYNOPSIS ContentType
+    [Optional] The Content-Type header value for the request
 
+    .SYNOPSIS
+    [Optional] The raw body content to send in the request
 #>
 Function Invoke-SitecoreRequest{
     param(        
@@ -367,7 +391,7 @@ Function Invoke-SitecoreRequest{
         [int]$page,
         [int]$pageSize,
         [hashtable]$addParams = @{},        
-        [string]$apiVersion = "1",
+        [int]$apiVersion = 1,
         [bool]$fastQuery,
         [bool]$extractBlob,
         [bool]$ssl,
@@ -409,7 +433,81 @@ Function Invoke-SitecoreRequest{
 
 <#
     .SYNOPSIS
-    Creates a new item in Sitecore
+    Creates a new item in Sitecore using the Sitecore Item Web API
+
+    .DESCRIPTION
+    Creates a new item in Sitecore using the given name and template.
+    Location for the item will be resolved by Sitecore based on the given
+    parameters.
+
+    .PARAMETER Domain
+    [Required] The domain of request to be made.  Can be provided with a protocol
+    but is not required.
+
+    .PARAMETER Username
+    [Optional] The username to send in the request.  This will be sent in the
+    "X-Scitemwebapi-Username" header. Required if "Password" is used.
+
+    .PARAMETER Password
+    [Optional] The password to send in the request.  This will be sent in the
+    "X-Scitemwebapi-Password" header. Required if "Username" is used.
+
+    .PARAMETER Template
+    [Required] The path for the template based from the Template folder 
+    e.g. Sample/Sample Item
+
+    .PARAMETER Name
+    [Required] The name of the item to be created
+
+    .PARAMETER ItemFields
+    [Optional] A hashtable of values to set on the new item once it is created.
+    Key/value pairs can be provided as <fieldname>/value or <fieldId>/value.
+    The given values will be encoded before being added to the body.
+
+    .PARAMETER Path
+    [Optional] The Sitecore item path to be used in the request.  Sent as part
+    of the URL.
+    
+    .PARAMETER Database
+    [Optional] The name of the database for the context of the items to be returned.
+    Set as "sc_database" in the query string.
+    
+    .PARAMETER Item
+    [Optional] The guid identifier for an item.  Can be wrapped in "{}" or not.
+    Sent as "sc_itemid" in the query string.
+
+    .PARAMETER Query
+    [Optional] The Sitecore query to be executed.  May be prepended by "fast:" or use the 
+    "FastQuery" parameter instead.  Will be URL encoded before sending.
+
+    .PARAMETER Scope
+    [Optional] String array to restrict the scope of items returned from the request.
+    Can be one or more of the following values:
+        s - Self
+        p - Parent
+        c - Children
+
+    .PARAMETER ResponseFields
+    [Optional] String array of fields to return for the given request.  Items may be
+    field names or guid identifiers.
+
+    .PARAMETER Payload
+    Restrict or expand the fields returned from a request.  This parameter
+    is ignored in requests that provide the "Fields" parameter. Can only be one of the
+    following values:
+        min - No fields are returned
+        content - Only content fields are returned
+        full - All the item fields, including content and standard fields are returned
+    
+    .PARAMETER ApiVersion
+    [Optional]The integer version of the API to use.  Defaults to 1.
+
+    .PARAMETER FastQuery
+    [Optional]Set if using the "Query" parameter and Sitecore method should run as a fast
+    query.
+
+    .PARAMETER Ssl
+    [Optional]Set to make requests over HTTPS.  Will override the protocol given in "Domain".
 #>
 Function Add-SitecoreItem{
     param(        
@@ -437,7 +535,8 @@ Function Add-SitecoreItem{
         [string[]]$responseFields,
         [ValidateScript({ Test-Payload $_ })]
         [string]$payload,    
-        [string]$apiVersion = "1",
+        [ValidateScript({ Test-GreaterThanZero $_ })]
+        [int]$apiVersion = 1,
         [switch]$fastQuery,
         [switch]$ssl
     )
@@ -458,7 +557,76 @@ Function Add-SitecoreItem{
 
 <#
     .SYNOPSIS
-    Updates a Sitecore item
+    Updates an item in Sitecore using the Sitcore Item Web API
+
+    .DESCRIPTION
+    Updates the contextual items in Sitecore.  Fields will only be updated if 
+    the item has the field to being with.
+
+    .PARAMETER Domain
+    [Required] The domain of request to be made.  Can be provided with a protocol
+    but is not required.
+
+    .PARAMETER Username
+    [Optional] The username to send in the request.  This will be sent in the
+    "X-Scitemwebapi-Username" header. Required if "Password" is used.
+
+    .PARAMETER Password
+    [Optional] The password to send in the request.  This will be sent in the
+    "X-Scitemwebapi-Password" header. Required if "Username" is used.
+
+    .PARAMETER ItemFields
+    [Optional] A hashtable of values to set on the new item once it is created.
+    Key/value pairs can be provided as <fieldname>/value or <fieldId>/value.
+    The given values will be encoded before being added to the body.
+
+    .PARAMETER Path
+    [Optional] The Sitecore item path to be used in the request.  Sent as part
+    of the URL.
+    
+    .PARAMETER Database
+    [Optional] The name of the database for the context of the items to be returned.
+    Set as "sc_database" in the query string.
+    
+    .PARAMETER Item
+    [Optional] The guid identifier for an item.  Can be wrapped in "{}" or not.
+    Sent as "sc_itemid" in the query string.
+
+    .PARAMETER Language
+    [Optional] The language context for the requested items(s).
+
+    .PARAMETER Query
+    [Optional] The Sitecore query to be executed.  May be prepended by "fast:" or use the 
+    "FastQuery" parameter instead.  Will be URL encoded before sending.
+
+    .PARAMETER Scope
+    [Optional] String array to restrict the scope of items returned from the request.
+    Can be one or more of the following values:
+        s - Self
+        p - Parent
+        c - Children
+
+    .PARAMETER ResponseFields
+    [Optional] String array of fields to return for the given request.  Items may be
+    field names or guid identifiers.
+
+    .PARAMETER Payload
+    Restrict or expand the fields returned from a request.  This parameter
+    is ignored in requests that provide the "Fields" parameter. Can only be one of the
+    following values:
+        min - No fields are returned
+        content - Only content fields are returned
+        full - All the item fields, including content and standard fields are returned
+    
+    .PARAMETER ApiVersion
+    [Optional]The integer version of the API to use.  Defaults to 1.
+
+    .PARAMETER FastQuery
+    [Optional]Set if using the "Query" parameter and Sitecore method should run as a fast
+    query.
+
+    .PARAMETER Ssl
+    [Optional]Set to make requests over HTTPS.  Will override the protocol given in "Domain".
 #>
 Function Set-SitecoreItem{
     param(        
@@ -476,13 +644,15 @@ Function Set-SitecoreItem{
         [string]$database,
         [ValidateScript({ Test-Guid $_ })]
         [string]$item,
+        [string]$language,
         [string]$query,
         [ValidateScript({ Test-Scope $_ })]
         [string[]]$scope,
         [string[]]$responseFields,
         [ValidateScript({ Test-Payload $_ })]
-        [string]$payload,    
-        [string]$apiVersion = "1",
+        [string]$payload,  
+        [ValidateScript({ Test-GreaterThanZero $_ })]  
+        [int]$apiVersion = 1,
         [switch]$fastQuery,
         [switch]$ssl
     )
@@ -492,14 +662,90 @@ Function Set-SitecoreItem{
     Invoke-SitecoreRequest $domain -method "PUT" -username $username -password $password `
         -path $path -database $database -item $item -query $query -scope $scope `
         -responseFields $responseFields -payload $payload -apiVersion $apiVersion `
-        -fastQuery $fastQuery -ssl $ssl -body $body `
+        -fastQuery $fastQuery -ssl $ssl -body $body -language $language `
         -contentType "application/x-www-form-urlencoded"
 }
 
-
 <#
     .SYNOPSIS
-    Returns one or more Sitecore items
+    Requests items from Sitecore using the Sitecore Item Web API
+
+    .DESCRIPTION
+    Returns one or more items from the Sitecore Item Web API based on the context
+    provided
+
+    .PARAMETER Domain
+    [Required] The domain of request to be made.  Can be provided with a protocol
+    but is not required.
+
+    .PARAMETER Username
+    [Optional] The username to send in the request.  This will be sent in the
+    "X-Scitemwebapi-Username" header. Required if "Password" is used.
+
+    .PARAMETER Password
+    [Optional] The password to send in the request.  This will be sent in the
+    "X-Scitemwebapi-Password" header. Required if "Username" is used.
+
+    .PARAMETER Path
+    [Optional] The Sitecore item path to be used in the request.  Sent as part
+    of the URL.
+
+    .PARAMETER Item
+    [Optional] The guid identifier for an item.  Can be wrapped in "{}" or not.
+    Sent as "sc_itemid" in the query string.
+
+    .PARAMETER Version
+    [Optional] Integer value for the version of the item to be returned.  Must be
+    greater than zero.  Sent as "sc_itemversion" in the query string.
+
+    .PARAMETER Database
+    [Optional] The name of the database for the context of the items to be returned.
+    Set as "sc_database" in the query string.
+
+    .PARAMETER Language
+    [Optional] The language context for the requested items(s).
+
+    .PARAMETER ResponseFields
+    [Optional] String array of fields to return for the given request.  Items may be
+    field names or guid identifiers.
+
+    .PARAMETER Payload
+    [Optional] Restrict or expand the fields returned from a request.  This parameter
+    is ignored in requests that provide the "Fields" parameter. Can only be one of the
+    following values:
+        min - No fields are returned
+        content - Only content fields are returned
+        full - All the item fields, including content and standard fields are returned
+
+    .PARAMETER Scope
+    [Optional] String array to restrict the scope of items returned from the request.
+    Can be one or more of the following values:
+        s - Self
+        p - Parent
+        c - Children
+
+    .PARAMETER Query
+    [Optional] The Sitecore query to be executed.  May be prepended by "fast:" or use the 
+    "FastQuery" parameter instead.  Will be URL encoded before sending.
+
+    .PARAMETER Page
+    [Optional] Integer value for the page of results to return. Must be greater than zero.
+
+    .PARAMETER PageSize
+    [Optional] Integer value for the number of results per page.  Must be greater than zero.
+
+    .PARAMETER ApiVersion
+    [Optional] The integer version of the API to use.  Defaults to 1.
+
+    .PARAMETER FastQuery
+    [Optional] Set if using the "Query" parameter and Sitecore method should run as a fast
+    query.
+
+    .PARAMETER ExtractBlob
+    [Optional] Set to retrieve BLOB field values
+
+    .PARAMETER Ssl
+    [Optional] Set to make requests over HTTPS.  Will override the protocol given in "Domain".
 #>
 Function Get-SitecoreItem{
     param(        
@@ -513,6 +759,7 @@ Function Get-SitecoreItem{
         [string]$path,
         [ValidateScript({ Test-Guid $_ })]
         [string]$item,
+        [ValidateScript({ Test-GreaterThanZero $_ })]
         [int]$version,        
         [string]$database,
         [string]$language,
@@ -522,9 +769,12 @@ Function Get-SitecoreItem{
         [ValidateScript({ Test-Scope $_ })]
         [string[]]$scope,
         [string]$query,
+        [ValidateScript({ Test-GreaterOrEqualToZero $_ })]
         [int]$page,
-        [int]$pageSize,      
-        [string]$apiVersion = "1",
+        [ValidateScript({ Test-GreaterThanZero $_ })]
+        [int]$pageSize,     
+        [ValidateScript({ Test-GreaterThanZero $_ })] 
+        [int]$apiVersion = 1,
         [bool]$fastQuery,
         [bool]$extractBlob,
         [bool]$ssl
@@ -538,6 +788,71 @@ Function Get-SitecoreItem{
         -ssl $ssl
 }
 
+<#
+    .SYNOPSIS
+    Deletes items from Sitecore using the Sitecore Item Web API
+
+    .DESCRIPTION
+    Deletes any item that matches the context provided
+
+    .PARAMETER Domain
+    [Required] The domain of request to be made.  Can be provided with a protocol
+    but is not required.
+
+    .PARAMETER Username
+    [Optional] The username to send in the request.  This will be sent in the
+    "X-Scitemwebapi-Username" header. Required if "Password" is used.
+
+    .PARAMETER Password
+    [Optional] The password to send in the request.  This will be sent in the
+    "X-Scitemwebapi-Password" header. Required if "Username" is used.
+
+    .PARAMETER Path
+    [Optional] The Sitecore item path to be used in the request.  Sent as part
+    of the URL.
+
+    .PARAMETER Item
+    [Optional] The guid identifier for an item.  Can be wrapped in "{}" or not.
+    Sent as "sc_itemid" in the query string.
+
+    .PARAMETER Version
+    [Optional] Integer value for the version of the item to be returned.  Must be
+    greater than zero.  Sent as "sc_itemversion" in the query string.
+
+    .PARAMETER Database
+    [Optional] The name of the database for the context of the items to be returned.
+    Set as "sc_database" in the query string.
+
+    .PARAMETER Language
+    [Optional] The language context for the requested items(s).
+
+    .PARAMETER Scope
+    [Optional] String array to restrict the scope of items returned from the request.
+    Can be one or more of the following values:
+        s - Self
+        p - Parent
+        c - Children
+
+    .PARAMETER Query
+    [Optional] The Sitecore query to be executed.  May be prepended by "fast:" or use the 
+    "FastQuery" parameter instead.  Will be URL encoded before sending.
+
+    .PARAMETER Page
+    [Optional] Integer value for the page of results to return. Must be greater than zero.
+
+    .PARAMETER PageSize
+    [Optional] Integer value for the number of results per page.  Must be greater than zero.
+
+    .PARAMETER ApiVersion
+    [Optional] The integer version of the API to use.  Defaults to 1.
+
+    .PARAMETER FastQuery
+    [Optional] Set if using the "Query" parameter and Sitecore method should run as a fast
+    query.
+
+    .PARAMETER Ssl
+    [Optional] Set to make requests over HTTPS.  Will override the protocol given in "Domain".
+#>
 Function Remove-SitecoreItem{
     param(        
         [Parameter(Mandatory=$true, Position=0, ParameterSetName="default")]
@@ -550,15 +865,19 @@ Function Remove-SitecoreItem{
         [string]$path,
         [ValidateScript({ Test-Guid $_ })]
         [string]$item,
+        [ValidateScript({ Test-GreaterThanZero $_ })]
         [int]$version,        
         [string]$database,
         [string]$language,
         [ValidateScript({ Test-Scope $_ })]
         [string[]]$scope,
         [string]$query,
+        [ValidateScript({ Test-GreaterOrEqualToZero $_ })]
         [int]$page,
-        [int]$pageSize,      
-        [string]$apiVersion = "1",
+        [ValidateScript({ Test-GreaterThanZero $_ })]
+        [int]$pageSize,     
+        [ValidateScript({ Test-GreaterThanZero $_ })]     
+        [int]$apiVersion = 1,
         [bool]$fastQuery,
         [bool]$ssl
     )
