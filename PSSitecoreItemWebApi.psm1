@@ -113,7 +113,7 @@ Function Format-UrlEncoded{
 
     end{        
         if($outputValue){
-            $outputValue -replace "(.*)&$",'?$1'
+            $outputValue -replace "(.*)&$",'$1'
         }
     }
 
@@ -134,6 +134,7 @@ Function Invoke-RawRequest{
     )
 
     $qs = Format-UrlEncoded $queryParams
+    $qs = if($qs) { '?' + $qs}
 
     Write-Verbose "Request URL: $url"
     Write-Verbose "Request query string: $qs"
@@ -332,7 +333,7 @@ function Invoke-SitecoreRequest{
         [int]$version,
         [string]$database,
         [string]$language,
-        [string[]]$fields,
+        [string[]]$responseFields,
         [ValidateScript({ Test-Payload $_ })]
         [string]$payload,
         [ValidateScript({ Test-Scope $_ })]
@@ -364,7 +365,7 @@ function Invoke-SitecoreRequest{
     if($version){ $addParams.sc_itemversion = $version }
     if($database){ $addParams.sc_database = $database }
     if($language){ $addParams.language = $language }
-    if($fields){ $addParams.fields = $fields -join '|' }
+    if($responseFields){ $addParams.fields = $responseFields -join '|' }
     if($payload){ $addParams.payload = $payload }
     if($scope) { $addParams.scope = $scope -join '|' }
     if($query){
@@ -378,6 +379,42 @@ function Invoke-SitecoreRequest{
     if($extractBlob){ $addParams.extractblob = 1 }
     
     Invoke-RawRequest $url -method $method -headers $headers -queryParams $addParams
+}
+
+<#
+    .SYNOPSIS
+    Creates a new item in Sitecore
+#>
+Function Add-SitecoreItem{
+    param(        
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="default")]
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="auth")]
+        [string]$domain,
+        [Parameter(Mandatory=$true,  Position=1, ParameterSetName="auth")]
+        [string]$username,        
+        [Parameter(Mandatory=$true,  Position=2, ParameterSetName="auth")]
+        [string]$password,
+        [Parameter(Mandatory=$true, ParameterSetName="default")]    
+        [Parameter(Mandatory=$true, ParameterSetName="auth")]          
+        [string]$template,
+        [Parameter(Mandatory=$true, ParameterSetName="default")]
+        [Parameter(Mandatory=$true, ParameterSetName="auth")]
+        [string]$name,
+        [hashtable]$itemFields = @{},
+        [string]$path,
+        [string]$database,
+        [ValidateScript({ Test-Guid $_ })]
+        [string]$item,
+        [string]$query,
+        [ValidateScript({ Test-Scope $_ })]
+        [string[]]$scope,
+        [string[]]$responseFields,
+        [ValidateScript({ Test-Payload $_ })]
+        [string]$payload,    
+        [string]$apiVersion = "1",
+        [switch]$fastQuery,
+        [switch]$ssl
+    )
 }
 
 # Only export the relevant functions
