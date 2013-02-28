@@ -131,7 +131,8 @@ Function Invoke-RawRequest{
         [string]$method = "get", 
         [hashtable]$headers,
         [hashtable]$queryParams,
-        [string]$body
+        [string]$body,
+        [string]$contentType = ''
     )
 
     $qs = Format-UrlEncoded $queryParams
@@ -143,9 +144,11 @@ Function Invoke-RawRequest{
     $headers.Keys | % { Write-Verbose "$_ = $($headers.$_)" }
 
     $result = if($body){
-                Invoke-WebRequest $url$qs -Method $method -Headers $headers -Body $body
+                Invoke-WebRequest $url$qs -Method $method -Headers $headers `
+                    -ContentType $contentType -Body $body
               } else {
-                Invoke-WebRequest $url$qs -Method $method -Headers $headers
+                Invoke-WebRequest $url$qs -Method $method -Headers $headers `
+                    -ContentType $contentType
               }
     $result | Format-ApiResponse
 }
@@ -218,13 +221,15 @@ Function Get-RequestHeaders{
         [Parameter(Position=1)]
         [string]$password,
         [Parameter(Position=2)]
-        [string]$contentType
+        [hashtable]$additional = @{}
     )
 
     $headers = @{}
+
     if($username){ $headers.Add("X-Scitemwebapi-Username", $username) }
     if($password){ $headers.Add("X-Scitemwebapi-Password", $password) }
-    if($contentType){ $headers.Add("Content-Type", $username) }
+    $additional.Keys | % { $headers.Add($_, $additional.$_) }
+ 
     $headers
 }
 <# --------------------------------------------------------------- #>
@@ -352,7 +357,7 @@ function Invoke-SitecoreRequest{
     $url = Format-RequestUrl $domain -path $path -apiVersion $apiVersion -ssl $ssl  
     
     # Get headers
-    $headers = Get-RequestHeaders $username $password $contentType
+    $headers = Get-RequestHeaders $username $password
 
     # Construct query string parameters
     # There has to be a better way to do this!
@@ -376,7 +381,8 @@ function Invoke-SitecoreRequest{
     if($pageSize){ $addParams.pagesize = $pageSize }
     if($extractBlob){ $addParams.extractblob = 1 }
     
-    Invoke-RawRequest $url -method $method -headers $headers -queryParams $addParams -body $body
+    Invoke-RawRequest $url -method $method -headers $headers -queryParams $addParams `
+        -body $body -contentType $contentType
 }
 
 <#
@@ -414,8 +420,6 @@ Function Add-SitecoreItem{
         [switch]$ssl
     )
 
-    $contentType = "application/x-www-form-urlencoded"
-
     $addParams = @{ 
         name = $name
         template = $template
@@ -426,7 +430,90 @@ Function Add-SitecoreItem{
     Invoke-SitecoreRequest $domain -method "POST" -username $username -password $password `
         -path $path -database $database -item $item -query $query -scope $scope `
         -responseFields $responseFields -payload $payload -apiVersion $apiVersion `
-        -fastQuery $fastQuery -ssl $ssl -addParams $addParams -body $body
+        -fastQuery $fastQuery -ssl $ssl -addParams $addParams -body $body `
+        -contentType "application/x-www-form-urlencoded"
+}
+
+<#
+    .SYNOPSIS
+    Updates a Sitecore item
+#>
+Function Set-SitecoreItem{
+    param(        
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="default")]
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="auth")]
+        [string]$domain,
+        [Parameter(Mandatory=$true,  Position=1, ParameterSetName="auth")]
+        [string]$username,        
+        [Parameter(Mandatory=$true,  Position=2, ParameterSetName="auth")]
+        [string]$password,
+        [Parameter(Mandatory=$true, ParameterSetName="default")]    
+        [Parameter(Mandatory=$true, ParameterSetName="auth")]          
+        [hashtable]$itemFields = @{},
+        [string]$path,
+        [string]$database,
+        [ValidateScript({ Test-Guid $_ })]
+        [string]$item,
+        [string]$query,
+        [ValidateScript({ Test-Scope $_ })]
+        [string[]]$scope,
+        [string[]]$responseFields,
+        [ValidateScript({ Test-Payload $_ })]
+        [string]$payload,    
+        [string]$apiVersion = "1",
+        [switch]$fastQuery,
+        [switch]$ssl
+    )
+    
+    $body = Format-UrlEncoded $itemFields
+
+    Invoke-SitecoreRequest $domain -method "PUT" -username $username -password $password `
+        -path $path -database $database -item $item -query $query -scope $scope `
+        -responseFields $responseFields -payload $payload -apiVersion $apiVersion `
+        -fastQuery $fastQuery -ssl $ssl -body $body `
+        -contentType "application/x-www-form-urlencoded"
+}
+
+
+<#
+    .SYNOPSIS
+    Returns one or more Sitecore items
+#>
+Function Get-SitecoreItem{
+ param(        
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="default")]
+        [Parameter(Mandatory=$true, Position=0, ParameterSetName="auth")]
+        [string]$domain,
+        [Parameter(Mandatory=$true,  Position=1, ParameterSetName="auth")]
+        [string]$username,        
+        [Parameter(Mandatory=$true,  Position=2, ParameterSetName="auth")]
+        [string]$password,               
+        [string]$path,
+        [ValidateScript({ Test-Guid $_ })]
+        [string]$item,
+        [int]$version,        
+        [string]$database,
+        [string]$language,
+        [string[]]$responseFields,
+        [ValidateScript({ Test-Payload $_ })]
+        [string]$payload,
+        [ValidateScript({ Test-Scope $_ })]
+        [string[]]$scope,
+        [string]$query,
+        [int]$page,
+        [int]$pageSize,      
+        [string]$apiVersion = "1",
+        [bool]$fastQuery,
+        [bool]$extractBlob,
+        [bool]$ssl
+    )
+
+    Invoke-SitecoreRequest $domain -username $username -password $password `
+        -path $path -item $item -version $version -database $database `
+        -language $language -responseFields $responseFields -payload $payload `
+        -scope $scope -query $query -page $page -pageSize $pageSize `
+        -apiVersion $apiVersion -fastQuery $fastQuery -extractBlob $extractBlob `
+        -ssl $ssl
 }
 
 # Only export the relevant functions
