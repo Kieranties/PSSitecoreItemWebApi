@@ -99,11 +99,10 @@ Function Test-Scope{
 Function Format-UrlEncoded{
     param(
         [Parameter(ValueFromPipeline=$true, Position=0, Mandatory=$true)]
-        [ValidateScript({ $_.Count -gt 0})]
         [hashtable]$hash = @{}
     )
     begin {
-        $outputValue = '?'
+        $outputValue = ''
     }
     
     process{
@@ -112,8 +111,10 @@ Function Format-UrlEncoded{
         }
     }
 
-    end{
-        $outputValue -replace "(.*)&$",'$1'
+    end{        
+        if($outputValue){
+            $outputValue -replace "(.*)&$",'?$1'
+        }
     }
 
 }
@@ -139,7 +140,34 @@ Function Invoke-RawRequest{
     Write-Verbose "Request headers:"
     $headers.Keys | % { Write-Verbose "$_ = $($headers.$_)" }
 
-    Invoke-WebRequest $url$qs -Method $method -Headers $headers | ConvertFrom-Json
+    Invoke-WebRequest $url$qs -Method $method -Headers $headers | Format-ApiResponse
+}
+
+<#
+    .SYNOPSIS
+    Formats an api response
+#>
+Function Format-ApiResponse{
+    param(
+        [Parameter(ValueFromPipeline=$true, Position=0, Mandatory=$true)]
+        $data
+    )
+
+    $jsonObj = $data | ConvertFrom-Json
+
+    # TODO: Tidy this up, what happens if more properties are added?
+    $propertyMap = @{"StatusCode" = $jsonObj.StatusCode}
+    if($jsonObj.statusCode -eq 200){
+        $propertyMap.Add("ResultCount", $jsonObj.Result.ResultCount)
+        $propertyMap.Add("TotalCount", $jsonObj.Result.TotalCount)
+        $propertyMap.Add("Items", $jsonObj.Result.Items)     
+    } else {
+        $propertyMap.Add("ErrorMessage", $jsonObj.Error.Message)
+    }
+        
+    # Return the new object
+    New-Object -TypeName PSObject -Property $propertyMap
+    
 }
 
 <# --------------------------------------------------------------- #>
@@ -314,7 +342,7 @@ function Invoke-SitecoreRequest{
         }
     }
     
-    Invoke-RawRequest $url $method $headers $query
+    Invoke-RawRequest $url -method $method -headers $headers -queryParams $addParams
 }
 
 # Only export the relevant functions
